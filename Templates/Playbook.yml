@@ -1,0 +1,88 @@
+---
+- hosts: 127.0.0.1
+  gather_facts: yes
+
+  pre_tasks:
+    - name: update cache #Se asegura de tener la ultima actualizacion.
+      become: yes       #Permite que use otro usuario si se requiere.
+      command: sudo dnf makecache
+
+#---------------------------------------------------------INSTALAR NGINX------------------------------------------------------
+  tasks:
+    - name: Instalar NGINX
+      become: yes       #permite usar otro usuario si se requiere
+      command: sudo dnf install nginx    #instala el servicio de proxy reverso.
+
+#---------------------------------------------------------Firewall-----------------------------------------------------------
+    - name: instalar Firewall
+      become: yes       #permite usar otro usuario si se requiere
+      command: sudo dnf install firewalld
+
+    - name: Chekear firewall
+      become: yes       #Permite usar otro usuario si se requiere
+      command: sudo systemctl enable firewalld  #habilitar el servicio
+    - command: sudo systemctl restart firewalld #reiniciar el servicio
+
+    - name: Comprobar httpd
+      become: yes       #Permite usar otro usuario si se requiere
+      command: sudo systemctl enable httpd  #habilitar el servicio
+    - command: sudo systemctl restart httpd #reiniciar el servicio
+
+    - name: permisos firewall
+      become: yes       #Permite usar otro usuario si se requiere.
+
+      #habilitar los puertos 80, 443 y los servicios nginx, http y https
+      command: sudo firewall-cmd --add-port=80/tcp 443/tcp --add-service=nginx, https, http  --permanent
+    - command: sudo firewall-cmd --reload    #refresca la configuracion
+
+#--------------------------------------------------------CONFIGURAR NGINX----------------------------------------------------
+    - name: Crear rutas y archivos      #creamos las rutas y los archivos que necesitaremos para la configuracion
+      become: true
+      command: mkdir -p /var/www/empresa/html/          #en esta carpeta se encontrara el index
+    - command: mkdir -p /var/www/empresa/logs           #en esta carpeta se encontraran los logs
+    - command: mkdir -p /etc/nginx/sites-enabled
+    - command: mkdir -p /etc/nginx/sites-available      #en esta carpeta se encontrara el VirtualHost
+
+    - name: configurar el index         #Creamos el index que determina lo que el usuario ve al inicio
+      become: true
+      template:
+            src: Templates/Index.j2
+            dest: /var/www/empresa/html/
+
+    - name: configurar  Virtual Host
+      become: yes       #Permite usar otro usuario si se requiere
+      template:
+              src: Templates/VirtualHost.j2
+              dest: /etc/nginx/sites-available
+
+    - name: Crear NGINX Conf para Kibana
+      become: true
+      command: sudo touch /etc/nginx/sites-available/kibana_proxy.conf
+
+    - name: Configurar  NGINX Conf
+      become: true       #Permite usar otro usuario si se requiere
+      blockinfile:
+        dest: /etc/nginx/sites-available/kibana_proxy.conf
+        marker: ""
+        block: |
+                server {
+                listen 80;  #Va a recibir request al puerto 80
+                location / {
+                        proxy_pass http://192.168.1.13:5601;  #Especificamos la IP de nuestro servidor y el puerto del emisor.
+                        proxy_set_header Authorization "";
+                        proxy_read_timeout 60s;         #solo esperamos 60 segundos los paquetes.
+                        }
+                }
+
+    - name: Crear Link entre NGINX con Kibana.
+      become: true       #Permite usar otro usuario si se requiere
+
+      #Crea un enlase simbolico entre sites-availables y sites-enebled
+      command: ln -s /etc/nginx/sites-available/kibana_proxy.conf /etc/nginx/sites-enabled/kibana_proxy.conf
+
+#-----------------------------------------------------Habilitar y iniciar servicio nginx--------------------------------------
+    - name: Asegurarse de que el servicio NGINX funcione.
+      become: true       #Permite usar otro usuario si se requiere
+      command: sudo systemctl enable nginx 
+    - command: sudo systemctl start nginx
+...

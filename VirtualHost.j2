@@ -1,0 +1,14 @@
+
+server {
+        listen 80;
+        listen [::]:80;
+
+        DocumentRoot /var/www/empresa/html;
+        ErrorLog /var/www/empresa/logs;
+	index index.html;
+        ServerName www.empresa.com;
+
+        location / {
+                try_files $uri $uri/ =404;
+        }
+}
